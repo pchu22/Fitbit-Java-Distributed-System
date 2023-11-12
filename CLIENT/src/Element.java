@@ -1,4 +1,3 @@
-// Element.java
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
@@ -11,14 +10,19 @@ public class Element {
     private String elementName;
 
     public Element(String leaderAddress, int unicastPort, String elementName) throws IOException {
-        this.unicastSocket = new DatagramSocket();
-        this.unicastPort = unicastPort;
-        this.leaderAddress = InetAddress.getByName(leaderAddress);
-        this.elementName = elementName;
+        try {
+            this.unicastSocket = new DatagramSocket();
+            this.unicastPort = unicastPort;
+            this.leaderAddress = InetAddress.getByName(leaderAddress);
+            this.elementName = elementName;
+        } catch (IOException e) {
+            e.printStackTrace();
+            throw e; // Re-throw the exception after printing the stack trace
+        }
     }
 
     public void sendHeartbeat(int targetPort) throws IOException {
-        String heartbeatMessage = "Heartbeat from " + elementName;
+        String heartbeatMessage = String.format(HEARTBEAT_MESSAGE_TEMPLATE, elementName);
         byte[] buffer = heartbeatMessage.getBytes();
         DatagramPacket packet = new DatagramPacket(buffer, buffer.length, leaderAddress, targetPort);
         unicastSocket.send(packet);
@@ -32,12 +36,18 @@ public class Element {
     }
 
     public void close() {
-        if (unicastSocket != null && !unicastSocket.isClosed()) {
-            unicastSocket.close();
+        try {
+            if (unicastSocket != null && !unicastSocket.isClosed()) {
+                unicastSocket.close();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
         }
     }
 
     public int getUnicastPort() { return unicastPort; }
 
     public String getElementName() { return elementName; }
+
+    private static final String HEARTBEAT_MESSAGE_TEMPLATE = "Heartbeat from %s";
 }

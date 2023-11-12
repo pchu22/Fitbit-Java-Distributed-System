@@ -43,7 +43,7 @@ public class Leader extends Thread {
                     String elementName = extractElementName(heartbeatMessage);
 
                     // Send response via unicast
-                    String responseMessage = "Heartbeat received from " + elementName + " at " + elementAddress;
+                    String responseMessage = String.format(HEARTBEAT_RESPONSE_TEMPLATE, elementName, elementAddress);
                     byte[] responseBuffer = responseMessage.getBytes();
                     DatagramPacket responsePacket = new DatagramPacket(responseBuffer, responseBuffer.length, InetAddress.getByName(elementAddress), elementUnicastPort);
                     unicastSocket.send(responsePacket);
@@ -83,4 +83,6 @@ public class Leader extends Thread {
     public void stopServer() {
         running = false;
     }
+
+    private static final String HEARTBEAT_RESPONSE_TEMPLATE = "Heartbeat received from %s at %s";
 }
