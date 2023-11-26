@@ -1,231 +1,221 @@
+import java.io.IOException;
+import java.io.Serializable;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.net.DatagramPacket;
 import java.net.InetAddress;
 import java.net.MulticastSocket;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Queue;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.*;
 
-public class Node {
-    private static int lastAssignedID = 0;
-    private int nodeID;
-    private boolean isLeader;
-    private List<Node> neighbors = new ArrayList<>();
-    private static final int multicastPort = 4446;
-    private int unicastPort;
-    private int leaderHeartbeatPort;
-    private InetAddress multicastGroupAddress;
-    private MulticastSocket multicastSocket;
-    private HeartbeatSender heartbeatSender;
-    private HeartbeatReceiver heartbeatReceiver;
-    private String ipAddress;
-    private List<Integer> dataset;
-    private DistanceMetric distanceMetric;
-    private Queue<String> decisionQueue = new LinkedBlockingQueue<>();
-    private static final double THRESHOLD = 10.0;
+public class Node implements Serializable, Runnable {
+    private static HashMap<Integer, Node> nodeList = new HashMap<>();
 
-    public Node(boolean isLeader, DistanceMetric distanceMetric) {
-        this.nodeID = setNodeID();
-        this.isLeader = isLeader;
-        this.unicastPort = 8888 + nodeID;
-        this.leaderHeartbeatPort = 9999;
-        this.distanceMetric = distanceMetric;
+    private int ID;
+    private String role;
+    private int port;
+    private int k;
+    private List<Record> records;
+    private DistanceMetric metric;
+
+    public enum DistanceMetric {
+        HAMMING(1),
+        MANHATTAN(2),
+        MINKOWSKI(3);
+
+        private final int value;
+
+        DistanceMetric(int value) {
+            this.value = value;
+        }
+
+        public static double hammingDistance (Record x, Record y) {
+            String binStr1 = Integer.toBinaryString(x.getValue());
+            String binStr2 = Integer.toBinaryString(y.getValue());
+            int lenDiff = Math.abs(binStr1.length() - binStr2.length());
+            if (binStr1.length() < binStr2.length()) {
+                binStr1 = "0".repeat(lenDiff) + binStr1;
+            } else {
+                binStr2 = "0".repeat(lenDiff) + binStr2;
+            }
+            int count = 0;
+            for (int i = 0; i < binStr1.length(); i++) {
+                if (binStr1.charAt(i) != binStr2.charAt(i)) {
+                    count++;
+                }
+            }
+            return count;
+        }
+
+        static int manhattanDistanceSum(int arr[], int n) {
+            Arrays.sort(arr);
+            int res = 0, sum = 0;
+            for (int i = 0; i < n; i++) {
+                res += (arr[i] * i - sum);
+                sum += arr[i];
+            }
+            return res;
+        }
+
+        static double manhattanTotalDistance(int[] x, int[] y, int n) { return manhattanDistanceSum(x, n) + manhattanDistanceSum(y, n); }
+
+        public static double pRoot(double value, double root) {
+            double rootValue = 1.0 / root;
+            return new BigDecimal(value).pow((int) rootValue).setScale(3, RoundingMode.HALF_UP).doubleValue();
+        }
+
+        public static double minkowskiDistance(double[] x, double[] y, double pValue) {
+            double sum = 0.0;
+            for (int i = 0; i < x.length; i++) {
+                double difference = x[i] - y[i];
+                sum += Math.pow(Math.abs(difference), pValue);
+            }
+            return pRoot(sum, pValue);
+        }
+
+        public int getValue() {
+            return value;
+        }
+    }
+
+    public Node(String _role, int _port, DistanceMetric _metric) {
+        this.role = _role;
+        this.port = _port;
+        this.metric = _metric;
+        this.records = new ArrayList<>();
+    }
+
+    public String getRole() {
+        return role;
+    }
+
+    public void setRole(String _role) {
+        this.role = _role;
+    }
+
+    public Integer getPort() {
+        return port;
+    }
+
+    public void setPort(int _port) {
+        this.port = _port;
+    }
+
+    public Integer getID() {
+        return ID;
+    }
+
+    public void setID(int _ID) {
+        this.ID = _ID;
+    }
+
+    public void addRecord(Record record) {
+        records.add(record);
+    }
+
+    public void sendHeartbeat() {
         try {
-            multicastGroupAddress = InetAddress.getByName("224.0.0.1");
-            multicastSocket = new MulticastSocket(multicastPort);
-            multicastSocket.joinGroup(multicastGroupAddress);
-        } catch (Exception e) {
-            e.printStackTrace();
+            MulticastSocket socket = new MulticastSocket(4446);
+            InetAddress group = InetAddress.getByName("224.0.0.1");
+
+            String heartbeatMessage = String.format("%s:%d", role, port);
+            byte[] data = heartbeatMessage.getBytes();
+
+            DatagramPacket packet = new DatagramPacket(data, data.length, group, 4446);
+            socket.send(packet);
+        } catch (IOException e) {
+            System.err.println("Error sending heartbeat: " + e.getMessage());
         }
     }
 
-    public void startNode() {
-        heartbeatSender = new HeartbeatSender(this, unicastPort, decisionQueue);
-        heartbeatReceiver = new HeartbeatReceiver(unicastPort, leaderHeartbeatPort);
+    public List<Record> getNearestNeighbours(Record record) {
+        List<Double> distances = new ArrayList<>();
+        for (Record existingRecord : records) {
+            switch (metric) {
+                case HAMMING:
+                    distances.add(DistanceMetric.hammingDistance(record, existingRecord));
+                    break;
+                case MANHATTAN:
+                    distances.add(DistanceMetric.manhattanTotalDistance(new int[]{record.getValue()}, new int[]{existingRecord.getValue()}, 1));
+                    break;
+                case MINKOWSKI:
+                    distances.add(DistanceMetric.minkowskiDistance(new double[]{record.getValue()}, new double[]{existingRecord.getValue()}, 2.0));
+                    break;
+            }
+        }
 
-        new Thread(this::nodeDiscovery).start();
-        heartbeatSender.start();
-        heartbeatReceiver.start();
+        Collections.sort(distances);
+
+        List<Record> nearestNeighbours = new ArrayList<>();
+        for (int i = 0; i < k; i++) {
+            nearestNeighbours.add(records.get(distances.get(i).intValue()));
+        }
+        return nearestNeighbours;
     }
 
-    private void nodeDiscovery() {
-        new Thread(this::sendDiscoveryMessage).start();
-        receiveDiscoveryMessage();
+    private Record extractRecordFromPacket(DatagramPacket packet) {
+        String payload = new String(packet.getData(), 0, packet.getLength());
+        String[] recordData = payload.split(":");
+
+        int value = Integer.parseInt(recordData[1]);
+
+        return new Record(value); // Fixed constructor call
     }
 
-    private void sendDiscoveryMessage() {
+    private void processHeartbeatMessage(String heartbeatMessage) {
+        String[] heartbeatData = heartbeatMessage.split(":");
+
+        String role = heartbeatData[0];
+        int port = Integer.parseInt(heartbeatData[1]);
+
+        if (nodeList.containsKey(port)) {
+            Node existingNode = nodeList.get(port);
+            existingNode.setRole(role);
+        } else {
+            Node newNode = new Node(role, port, metric);
+            nodeList.put(port, newNode);
+        }
+    }
+
+    public void sendMessage(String message) {
         try {
-            while (true) {
-                String discoveryMessage = "Node " + nodeID + " is alive!";
-                DatagramPacket discoveryPacket = new DatagramPacket(discoveryMessage.getBytes(), discoveryMessage.length(), multicastGroupAddress, multicastPort);
-                multicastSocket.send(discoveryPacket);
-                Thread.sleep(20000); // Waits 20 seconds before sending the next discovery message
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
+            MulticastSocket socket = new MulticastSocket(4446);
+            InetAddress group = InetAddress.getByName("224.0.0.1");
+
+            byte[] buf = message.getBytes();
+            DatagramPacket packet = new DatagramPacket(buf, buf.length, group, 4446);
+
+            socket.send(packet);
+        } catch (IOException e) {
+            System.err.println("Error sending message: " + e.getMessage());
         }
     }
 
-    private void receiveDiscoveryMessage() {
-        try {
-            byte[] buffer = new byte[1024];
-            DatagramPacket receivedPacket = new DatagramPacket(buffer, buffer.length);
+    @Override
+    public void run() {
+        while (true) {
+            try {
+                MulticastSocket socket = new MulticastSocket(4446);
+                InetAddress group = InetAddress.getByName("224.0.0.1");
+                socket.joinGroup(group);
 
-            while (true) {
-                multicastSocket.receive(receivedPacket);
-                String receivedMessage = new String(receivedPacket.getData(), 0, receivedPacket.getLength());
-                System.out.println("Received discovery message: " + receivedMessage);
-                processDiscoveryMessage(receivedMessage, receivedPacket.getAddress());
-                buffer = new byte[1024];
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
+                byte[] buf = new byte[256];
+                DatagramPacket packet = new DatagramPacket(buf, buf.length);
 
-    private void processDiscoveryMessage(String message, InetAddress senderAddress) {
-        String ipAddress = senderAddress.getHostAddress();
-        Node neighbor = neighbors.stream()
-                .filter(node -> ipAddress.equals(node.getIpAddress()))
-                .findFirst()
-                .orElse(null);
+                socket.receive(packet);
+                String receivedMessage = new String(packet.getData(), 0, packet.getLength());
+                if (receivedMessage.startsWith("RECORD")) {
 
-        if (neighbor == null) {
-            neighbor = new Node(false, distanceMetric); // Use the same distance metric as the current node
-            neighbor.setIpAddress(ipAddress);
-            neighbor.setNodeID();
-            neighbors.add(neighbor);
-            System.out.println("Added node " + neighbor.getNodeID() + " to the neighbors list.");
+                    Record record = extractRecordFromPacket(packet);
 
-            if (dataset != null) {
-                neighbor.setDataset(new ArrayList<>(dataset));
-            }
-
-            if (dataset != null && !dataset.isEmpty()) {
-                int newRecord = Utils.randomHeartbeat();
-                double similarity = calculateSimilarity(newRecord, neighbor.getDataset());
-                System.out.println("Similarity with Node " + neighbor.getNodeID() + ": " + similarity);
-            }
-        }
-    }
-
-    private void sendDecisionToLeader(boolean addToDataset) {
-        String decisionMessage = "Decision: " + (addToDataset ? "add" : "notadd");
-        decisionQueue.add(decisionMessage);
-    }
-
-    public void receiveRequestAndDecide(int request) {
-        if (dataset == null) {
-            throw new IllegalStateException("Dataset not initialized. Set the dataset before making comparisons.");
-        }
-
-        double similarity = calculateSimilarity(request, dataset);
-        System.out.println("Similarity with Request: " + similarity);
-
-        boolean addToDataset = similarity > THRESHOLD;
-
-        sendDecisionToLeader(addToDataset);
-    }
-
-    private double calculateSimilarity(int newRecord, List<Integer> records) {
-        double sumSquaredDifferences = 0.0;
-        for (int record : records) {
-            double difference = distanceMetric.calculateDistance(newRecord, record);
-            sumSquaredDifferences += Math.pow(difference, 2);
-        }
-        return Math.sqrt(sumSquaredDifferences);
-    }
-
-    public void initializeDataset() {
-        if (dataset == null) {
-            dataset = new ArrayList<>();
-        }
-
-        Thread heartbeatGenerator = new Thread(() -> {
-            while (true) {
-                int newHeartbeat = Utils.randomHeartbeat();
-
-                // Null check added here
-                boolean isSimilar = dataset != null && dataset.stream()
-                        .anyMatch(existingHeartbeat -> calculateSimilarity(newHeartbeat, Collections.singletonList(existingHeartbeat)) > THRESHOLD);
-
-                if (!isSimilar) {
-                    dataset.add(newHeartbeat);
-                    System.out.println("Added heartbeat to the dataset: " + newHeartbeat);
+                    addRecord(record);
+                } else if (receivedMessage.startsWith("HEARTBEAT")) {
+                    processHeartbeatMessage(receivedMessage);
                 } else {
-                    System.out.println("Generated heartbeat is similar to existing ones. Not added.");
+                    System.out.println("Received unknown message: " + receivedMessage);
                 }
-
-                try {
-                    // Sleep for 5 seconds
-                    Thread.sleep(5000);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
+            } catch (IOException e) {
+                System.err.println("Error receiving datagram: " + e.getMessage());
             }
-        });
-        heartbeatGenerator.start();
-    }
-
-
-    private static synchronized int setNodeID() {
-        return ++lastAssignedID;
-    }
-
-    public int getNodeID() {
-        return nodeID;
-    }
-
-    public boolean isLeader() {
-        return isLeader;
-    }
-
-    public void setLeader(boolean leader) {
-        isLeader = leader;
-    }
-
-    public List<Node> getNeighbors() {
-        return neighbors;
-    }
-
-    public void setNeighbors(List<Node> neighbors) {
-        this.neighbors = neighbors;
-    }
-
-    public int getUnicastPort() {
-        return unicastPort;
-    }
-
-    public InetAddress getMulticastGroupAddress() {
-        return multicastGroupAddress;
-    }
-
-    public void setMulticastGroupAddress(InetAddress multicastGroupAddress) {
-        this.multicastGroupAddress = multicastGroupAddress;
-    }
-
-    public MulticastSocket getMulticastSocket() {
-        return multicastSocket;
-    }
-
-    public void setMulticastSocket(MulticastSocket multicastSocket) {
-        this.multicastSocket = multicastSocket;
-    }
-
-    public String getIpAddress() {
-        return ipAddress;
-    }
-
-    public void setIpAddress(String ipAddress) {
-        this.ipAddress = ipAddress;
-    }
-
-    public List<Integer> getDataset() {
-        return dataset;
-    }
-
-    public void setDataset(List<Integer> dataset) {
-        this.dataset = dataset;
+        }
     }
 }

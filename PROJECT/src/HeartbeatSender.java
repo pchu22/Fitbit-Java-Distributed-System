@@ -2,38 +2,31 @@ import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
-import java.util.Queue;
+import java.net.MulticastSocket;
+import java.util.List;
 
 public class HeartbeatSender extends Thread {
-    private int unicastPort;
-    private Node node;
-    private DatagramSocket socket;
-    private Queue<String> decisionQueue;
 
-    public HeartbeatSender(Node node, int unicastPort, Queue<String>decisionQueue) {
-        this.node = node;
-        this.unicastPort = unicastPort;
-        this.decisionQueue = decisionQueue;
-        try {
-            socket = new DatagramSocket();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+    private InetAddress address;
+    private int port;
+
+    public HeartbeatSender(InetAddress address, int port) {
+        this.address = address;
+        this.port = port;
     }
 
-    @Override
-    public void run() {
-        try {
-            while (true) {
-                int heartbeatValue = Utils.randomHeartbeat();
-                String heartbeatMessage = "Heartbeat|" + node.getNodeID() + "|" + heartbeatValue;
-                DatagramPacket heartbeatPacket = new DatagramPacket(heartbeatMessage.getBytes(), heartbeatMessage.length(), InetAddress.getByName("224.0.0.1"), unicastPort);
-                socket.send(heartbeatPacket);
-                Thread.sleep(5000);
-            }
-        } catch (IOException | InterruptedException e) {
-            e.printStackTrace();
-        }
+    public void sendHeartbeat(List<String> pedidosPendentes) throws IOException {
+        String message = "Heartbeat";
+        pedidosPendentes.add(message);
 
+        DatagramSocket socket = new DatagramSocket();
+        DatagramPacket packet = new DatagramPacket(message.getBytes(), message.length(), address, port);
+        socket.send(packet);
+        socket.close();
+
+        socket = new DatagramSocket();
+        packet = new DatagramPacket(message.getBytes(), message.length(), InetAddress.getByName("224.0.0.1"), 4446);
+        socket.send(packet);
+        socket.close();
     }
 }

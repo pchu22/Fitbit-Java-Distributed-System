@@ -1,35 +1,47 @@
-import javax.swing.*;
+import java.io.IOException;
 import java.net.DatagramPacket;
-import java.net.DatagramSocket;
+import java.net.InetAddress;
+import java.net.MulticastSocket;
+import java.util.ArrayList;
+import java.util.List;
 
 public class HeartbeatReceiver extends Thread {
-    private int unicastPort;
-    private int leaderHeartbeatPort;
-    private DatagramSocket socket;
 
-    public HeartbeatReceiver(int unicastPort, int leaderHeartbeatPort) {
-        this.unicastPort = unicastPort;
-        this.leaderHeartbeatPort = leaderHeartbeatPort;
+    protected MulticastSocket socket = null;
+    protected byte[] buf = new byte[256];
+    private List<String> pendingRequests = new ArrayList<>();
+
+    public void run() {
         try {
-            socket = new DatagramSocket(unicastPort);
-        } catch (Exception e) {
-            e.printStackTrace();
+            socket = new MulticastSocket(4446);
+            InetAddress group = InetAddress.getByName("224.0.0.1");
+            socket.joinGroup(group);
+            while (true) {
+                DatagramPacket packet = new DatagramPacket(buf, buf.length);
+                try {
+                    socket.receive(packet);
+                    String received = new String(packet.getData(), 0, packet.getLength());
+                    if ("Heartbeat".equals(received)) {
+                        checkPendingRequests();
+                    }
+                } catch (IOException e) {
+                    System.err.println("Error receiving datagram: " + e.getMessage());
+                }
+            }
+        } catch (IOException e) {
+            System.err.println("Error creating multicast socket or joining group: " + e.getMessage());
         }
     }
 
-    @Override
-    public void run() {
-        try {
-            while (true) {
-                byte[] buffer = new byte[1024];
-                DatagramPacket receivedPacket = new DatagramPacket(buffer, buffer.length);
-                socket.receive(receivedPacket);
-                String receivedMessage = new String(receivedPacket.getData(), 0, receivedPacket.getLength());
-                System.out.println("Received heartbeat: " + receivedMessage);
-                buffer = new byte[1024];
+    private void checkPendingRequests() {
+        if (pendingRequests.isEmpty()) {
+            return;
+        }
+
+        for (String request : pendingRequests) {
+            if ("Heartbeat".equals(request)) {
+                pendingRequests.remove(request);
             }
-        } catch (Exception e) {
-            e.printStackTrace();
         }
     }
 }

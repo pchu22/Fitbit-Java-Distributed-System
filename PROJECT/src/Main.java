@@ -1,30 +1,36 @@
+import java.util.ArrayList;
 import java.util.List;
 
 public class Main {
+
+    private static Node leaderNode = new Node("L", 4446, Node.DistanceMetric.HAMMING);
+
     public static void main(String[] args) {
-        // Create the leader node
-        Node leaderNode = new Node(true, new Hamming());
-        leaderNode.initializeDataset();
+        List<Node> nodes = initializeNodes();
+        for (Node node : nodes) {
+            new Thread(node).start();
+        }
 
-        // Create three element nodes
-        Node elementNode1 = new Node(false, new Hamming());
-        Node elementNode2 = new Node(false, new Manhattan());
-        Node elementNode3 = new Node(false, new Minkowski(2.0));
-
-        // Initialize the dataset for element nodes
-        elementNode1.initializeDataset();
-        elementNode2.initializeDataset();
-        elementNode3.initializeDataset();
-
-        // Set the leader node as the first neighbor for element nodes
-        elementNode1.getNeighbors().add(leaderNode);
-        elementNode2.getNeighbors().add(leaderNode);
-        elementNode3.getNeighbors().add(leaderNode);
-
-        // Start the nodes
-        leaderNode.startNode();
-        elementNode1.startNode();
-        elementNode2.startNode();
-        elementNode3.startNode();
+        receiveNearestNeighbors();
     }
+
+    private static List<Node> initializeNodes() {
+        List<Node> nodes = new ArrayList<>();
+
+        nodes.add(new Node("E", 4447, Node.DistanceMetric.MANHATTAN));
+        nodes.add(new Node("E", 4448, Node.DistanceMetric.MINKOWSKI));
+        nodes.add(new Node("E", 4449, Node.DistanceMetric.HAMMING));
+
+        return nodes;
+    }
+
+    private static void receiveNearestNeighbors() {
+        while (true) {
+            List<Record> nearestNeighbors = MulticastReceiver.receiveNearestNeighbors(leaderNode);
+            if (nearestNeighbors != null) {
+                System.out.println("Nearest neighbors: " + nearestNeighbors);
+            }
+        }
+    }
+
 }
