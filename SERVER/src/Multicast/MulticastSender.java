@@ -99,9 +99,9 @@ public class MulticastSender extends Thread {
             }
         }
         if (counter == 2) {
-            messageBuilder.append("not add");
+            messageBuilder.append("IGNORE");
         } else {
-            messageBuilder.append("add");
+            messageBuilder.append("ADD");
         }
 
         waitingQueue.clear();

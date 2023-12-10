@@ -26,7 +26,7 @@ public class Server {
         String role = args[1];
         int method = parseInt(args[2]);
 
-        InetAddress group = InetAddress.getByName("224.0.0.1");
+        InetAddress group = InetAddress.getByName("localhost");
         int multicastPort = 4446;
 
         Node node = new Node(port, role, method);

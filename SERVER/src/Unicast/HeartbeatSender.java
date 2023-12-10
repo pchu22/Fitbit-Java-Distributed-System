@@ -15,19 +15,24 @@ public class HeartbeatSender extends Thread {
     }
 
     public static void main(String[] args) {
+        if (args.length < 2) {
+            System.out.println("Usage: java HeartbeatSender <ID> <decision>");
+            return;
+        }
+
         String ID = args[0];
         String decision = args[1];
 
-        try{
+        try {
             Socket socket = new Socket("localhost", 3030);
 
             PrintWriter output = new PrintWriter(socket.getOutputStream(), true);
             output.println(ID + ", " + decision);
-            System.out.println("The message has been sent to thr server: " + ID);
+            System.out.println("The message has been sent to the server: " + ID);
 
             output.close();
             socket.close();
-        } catch (IOException e){
+        } catch (IOException e) {
             e.printStackTrace();
         }
     }

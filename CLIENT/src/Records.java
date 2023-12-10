@@ -17,7 +17,7 @@ public class Records implements Serializable {
     @Override
     public String toString() {
         return "Records{" +
-                "message='" + message + '\'' +
+                    "message='" + message + '\'' +
                 '}';
     }
 }

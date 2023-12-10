@@ -11,10 +11,10 @@ import java.util.UUID;
 public class HeartbeatReceiver extends Thread {
 
     private int port;
-    ServerSocket serverSocket;
-    InetAddress serverAddress;
+    private ServerSocket serverSocket;
+    private InetAddress serverAddress;
 
-    public HeartbeatReceiver(int _port){
+    public HeartbeatReceiver(int _port) {
         this.port = _port;
     }
 
@@ -26,23 +26,26 @@ public class HeartbeatReceiver extends Thread {
             serverSocket = new ServerSocket(serverPort, 50, serverAddress);
             while (true) {
                 Socket clientSocket = serverSocket.accept();
-                BufferedReader input = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
-
-                String message = input.readLine();
-                String[] _messageArray = message.split(", ");
-                String decision = _messageArray[1];
-                UUID _uuid = UUID.fromString(_messageArray[0]);
-                addToBuffer(_uuid, decision);
-
-                input.close();
-                clientSocket.close();
+                try (BufferedReader input = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()))) {
+                    String message = input.readLine();
+                    String[] _messageArray = message.split(", ");
+                    if (_messageArray.length == 2) {
+                        String decision = _messageArray[1];
+                        UUID _uuid = UUID.fromString(_messageArray[0]);
+                        addToBuffer(_uuid, decision);
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                } finally {
+                    clientSocket.close();
+                }
             }
         } catch (IOException e) {
             System.err.println("Error creating multicast socket or joining group: " + e.getMessage());
         } finally {
             try {
                 serverSocket.close();
-            } catch (IOException e){
+            } catch (IOException e) {
                 e.printStackTrace();
             }
         }
